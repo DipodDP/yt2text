@@ -1,82 +1,56 @@
 from aiogram import Router, F
-from aiogram.enums import ParseMode
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
-from aiogram.utils.formatting import as_section, as_key_value, as_marked_list
+from aiogram.types import (
+    BufferedInputFile,
+    Message,
+    ReplyKeyboardRemove,
+)
+from betterlogging import logging
 
-from tgbot.keyboards.inline import simple_menu_keyboard, my_orders_keyboard, \
-    OrderCallbackData
-from tgbot.keyboards.reply import ReplyButtons
-from tgbot.misc.states import MenuStates
+from tgbot.services.get_transcription import get_id_from_link, get_transcription
+
+
+logger = logging.getLogger(__name__)
 
 menu_router = Router()
 
 
-@menu_router.message(F.text == ReplyButtons.SEND_MENU)
-@menu_router.message(Command("menu"))
+@menu_router.message(F.text)
 async def show_menu(message: Message):
-    await message.answer("Choose menu option:", reply_markup=simple_menu_keyboard())
+    if message.text:
+        logger.info(f"Message text: {message.text}")
 
+        video_id = get_id_from_link(message.text)
+        logger.debug(f"Video ID {video_id}")
 
-# We can use F.data filter to filter callback queries by data field from CallbackQuery object
-@menu_router.callback_query(F.data == "create_order")
-async def create_order(query: CallbackQuery, state: FSMContext):
-    # Firstly, always answer callback query (as Telegram API requires)
-    await query.answer()
+        if not video_id:
+            await message.answer(
+                "Invalid YouTube URL", reply_markup=ReplyKeyboardRemove()
+            )
+            return
 
-    # This method will send an answer to the message with the button, that user pressed
-    # Here query - is a CallbackQuery object, which contains message: Message object
-    await state.set_state(MenuStates.order)
-    await query.message.answer("You have chosen to create an order!")
+        transcription = await get_transcription(video_id)
 
-    # You can also Edit the message with a new text
-    # await query.message.edit_text("You have chosen to create an order!")
+        if transcription:
+            logger.debug(f"Transcription: {transcription}")
 
-# Let's create a simple list of orders for demonstration purposes
-ORDERS = [
-    {"id": 1, "title": "Order 1", "status": "In progress"},
-    {"id": 2, "title": "Order 2", "status": "Completed"},
-    {"id": 3, "title": "Order 3", "status": "Completed"},
-]
+            if len(transcription) > 4096:
+                file_content = transcription.encode("utf-8")
+                file = BufferedInputFile(file_content, "transcription.txt")
+                await message.answer(
+                    "The transcription is too long to display here. It has been sent as a file.",
+                    reply_markup=ReplyKeyboardRemove(),
+                )
+                await message.answer_document(file)
+            else:
+                await message.answer(
+                    "Here's your video transcription:",
+                    reply_markup=ReplyKeyboardRemove(),
+                )
+                await message.answer(transcription)
 
-
-@menu_router.callback_query(F.data == "my_orders")
-async def my_orders(query: CallbackQuery):
-    await query.answer()
-    await query.message.edit_text("You have chosen to view your orders!",
-                                  reply_markup=my_orders_keyboard(ORDERS))
-
-# To filter the callback data, that was created with CallbackData factory, you can use .filter() method
-@menu_router.callback_query(OrderCallbackData.filter())
-async def show_order(query: CallbackQuery, callback_data: OrderCallbackData):
-    await query.answer()
-
-    # You can get the data from callback_data object as attributes
-    order_id = callback_data.order_id
-
-    # Then you can get the order from your database (here we use a simple list)
-    order_info = next(
-        (order for order in ORDERS if order["id"] == order_id), None)
-
-    if order_info:
-        # Here we use aiogram.utils.formatting to format the text
-        # https://docs.aiogram.dev/en/latest/utils/formatting.html
-        text = as_section(
-            as_key_value("Order #", order_info["id"]),
-            as_marked_list(
-                as_key_value("Product", order_info["title"]),
-                as_key_value("Status", order_info["status"]),
-            ),
-        )
-        # Example:
-        # Order #: 2
-        # - Product: Order 2
-        # - Status: Completed
-
-        await query.message.edit_text(text.as_html(), parse_mode=ParseMode.HTML)
-
-        # You can also use MarkdownV2:
-        # await query.message.edit_text(text.as_markdown(), parse_mode=ParseMode.MARKDOWN_V2)
-    else:
-        await query.message.edit_text("Order not found!")
+        else:
+            logger.info("Transcription not found")
+            await message.answer(
+                "Transcription not found for the provided video.",
+                reply_markup=ReplyKeyboardRemove(),
+            )

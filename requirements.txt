@@ -1,6 +1,6 @@
 aiogram~=3.0
 environs~=9.0
-redis
+# redis
 betterlogging
 
 # # For enabling api:

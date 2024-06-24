@@ -28,10 +28,14 @@ class DbConfig:
     password: str
     user: str
     database: str
+    dialect: str
+    driver: str
     port: int = 5432
 
     # For SQLAlchemy
-    def construct_sqlalchemy_url(self, driver="asyncpg", host=None, port=None) -> str:
+    def construct_sqlalchemy_url(
+        self, dialect="postgresql", driver="asyncpg", host=None, port=None
+    ) -> str:
         """
         Constructs and returns a SQLAlchemy URL for this database configuration.
         """
@@ -43,13 +47,14 @@ class DbConfig:
         if not port:
             port = self.port
         uri = URL.create(
-            drivername=f"postgresql+{driver}",
+            drivername=f"{dialect}+{driver}",
             username=self.user,
             password=self.password,
             host=host,
             port=port,
             database=self.database,
         )
+
         return uri.render_as_string(hide_password=False)
 
     @staticmethod
@@ -57,13 +62,21 @@ class DbConfig:
         """
         Creates the DbConfig object from environment variables.
         """
+        database = env.str("DB")
         host = env.str("DB_HOST")
-        password = env.str("POSTGRES_PASSWORD")
-        user = env.str("POSTGRES_USER")
-        database = env.str("POSTGRES_DB")
+        password = env.str("DB_PASSWORD")
+        user = env.str("DB_USER")
+        dialect = env.str("DB_DIALECT", "postgresql")
         port = env.int("DB_PORT", 5432)
+        driver = env.str("DB_DRIVER", "asyncpg")
         return DbConfig(
-            host=host, password=password, user=user, database=database, port=port
+            host=host,
+            password=password,
+            user=user,
+            database=database,
+            port=port,
+            dialect=dialect,
+            driver=driver,
         )
 
 
@@ -75,7 +88,9 @@ class TgBot:
 
     token: str
     admin_ids: list[int]
+    proxy_url: str
     use_redis: bool
+    console_log_level: str
 
     @staticmethod
     def from_env(env: Env):
@@ -83,9 +98,17 @@ class TgBot:
         Creates the TgBot object from environment variables.
         """
         token = env.str("BOT_TOKEN")
-        admin_ids = env.list("ADMINS", subcast=int)
+        admin_ids = list(map(int, env.list("ADMINS")))
+        proxy_url = env.str("PROXY_URL", None)
+        console_log_level = env.str("CONSOLE_LOGGER_LVL")
         use_redis = env.bool("USE_REDIS")
-        return TgBot(token=token, admin_ids=admin_ids, use_redis=use_redis)
+        return TgBot(
+            token=token,
+            admin_ids=admin_ids,
+            proxy_url=proxy_url,
+            use_redis=use_redis,
+            console_log_level=console_log_level,
+        )
 
 
 @dataclass
@@ -103,9 +126,9 @@ class RedisConfig:
         The host where Redis server is located.
     """
 
-    redis_pass: Optional[str]
-    redis_port: Optional[int]
-    redis_host: Optional[str]
+    redis_pass: Optional[str] = None
+    redis_port: Optional[int] = None
+    redis_host: Optional[str] = None
 
     def dsn(self) -> str:
         """
@@ -144,7 +167,14 @@ class Miscellaneous:
         A string used to hold other various parameters as required (default is None).
     """
 
-    other_params: str = None
+    other_params: str | None = None
+
+    @staticmethod
+    def from_env(env: Env):
+        """
+        Creates the Miscellaneous object from environment variables.
+        """
+        return Miscellaneous()
 
 
 @dataclass
@@ -167,12 +197,12 @@ class Config:
     """
 
     tg_bot: TgBot
-    misc: Miscellaneous
+    misc: Optional[Miscellaneous] = None
     db: Optional[DbConfig] = None
     redis: Optional[RedisConfig] = None
 
 
-def load_config(path: str = None) -> Config:
+def load_config(path: str | None = None) -> Config:
     """
     This function takes an optional file path as input and returns a Config object.
     :param path: The path of env file from where to load the configuration variables.
@@ -189,5 +219,5 @@ def load_config(path: str = None) -> Config:
         tg_bot=TgBot.from_env(env),
         # db=DbConfig.from_env(env),
         # redis=RedisConfig.from_env(env),
-        misc=Miscellaneous(),
+        misc=Miscellaneous.from_env(env),
     )

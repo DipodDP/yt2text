@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "cirulnik-admin-bot"
+name = "yt2text"
 version = "0.1.0"
 description = ""
 authors = ["DipodDP <dipoddp@gmail.com>"]
@@ -12,6 +12,8 @@ aiogram = ">=3.0,<4.0"
 environs = ">=9.0,<10.0"
 # redis = "^5.0.1"
 betterlogging = "^0.2.1"
+flask = "^3.0.3"
+youtube-transcript-api = "^0.6.2"
 
 [build-system]
 requires = ["poetry-core"]

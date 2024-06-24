@@ -6,8 +6,8 @@ from .user import user_router
 
 routers_list = [
     admin_router,
-    menu_router,
     user_router,
+    menu_router,
     echo_router,  # echo_router must be last
 ]
 

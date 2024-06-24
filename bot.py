@@ -3,14 +3,17 @@ import logging
 
 import betterlogging as bl
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
-from tgbot.misc.notify_admins import on_down, on_startup
-from tgbot.misc.setting_comands import set_all_default_commands
 # from aiogram.fsm.storage.redis import RedisStorage, DefaultKeyBuilder
 
-from tgbot.config import load_config, Config
+
+from tgbot.config import Config, load_config
 from tgbot.handlers import routers_list
 from tgbot.middlewares.config import ConfigMiddleware
+# from tgbot.middlewares.database import DatabaseMiddleware
+from tgbot.misc.notify_admins import on_down, on_startup
+from tgbot.misc.setting_comands import set_all_default_commands
 
 
 def register_global_middlewares(dp: Dispatcher, config: Config, session_pool=None):
@@ -26,7 +29,7 @@ def register_global_middlewares(dp: Dispatcher, config: Config, session_pool=Non
     """
     middleware_types = [
         ConfigMiddleware(config),
-        # DatabaseMiddleware(session_pool),
+        # DatabaseMiddleware(session_pool) if session_pool else None,
     ]
 
     for middleware_type in middleware_types:
@@ -34,7 +37,7 @@ def register_global_middlewares(dp: Dispatcher, config: Config, session_pool=Non
         dp.callback_query.outer_middleware(middleware_type)
 
 
-def setup_logging():
+def setup_logging(log_level: str):
     """
     Set up logging configuration for the application.
 
@@ -49,8 +52,8 @@ def setup_logging():
     Example usage:
         setup_logging()
     """
-    log_level = logging.INFO
     bl.basic_colorized_config(level=log_level)
+    logging.basicConfig(level=log_level)
 
     logging.basicConfig(
         level=logging.INFO,
@@ -82,27 +85,45 @@ def get_storage(config):
 
 
 async def main():
-    setup_logging()
-
     config = load_config(".env")
+
+    log_level = config.tg_bot.console_log_level
+    setup_logging(log_level)
+
     storage = get_storage(config)
 
-    bot = Bot(token=config.tg_bot.token, parse_mode="HTML")
+    # Proxy URL with credentials:
+    # "protocol://user:password@host:port"
+    session = (
+        AiohttpSession(config.tg_bot.proxy_url) if config.tg_bot.proxy_url else None
+    )
+    bot = Bot(token=config.tg_bot.token, session=session)
     dp = Dispatcher(storage=storage)
 
     dp.include_routers(*routers_list)
 
-    register_global_middlewares(dp, config)
+    if config.db:
+        # TODO: If you're using SQLAlchemy, move the import to the top of the file!
+        from infrastructure.database.setup import create_engine, create_session_pool
+        engine = create_engine(
+                config.db,
+                echo=(log_level == 'DEBUG')
+        )
+        session_pool = create_session_pool(engine)
+    else:
+        session_pool = None
+
+    register_global_middlewares(dp, config, session_pool)
     await set_all_default_commands(bot)
 
     try:
         await on_startup(bot, config.tg_bot.admin_ids)
+        await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
 
     except Exception as e:
         logging.exception(e)
         # await dp.stop_polling()
-        ...
     finally:
         await on_down(bot, config.tg_bot.admin_ids)
         await bot.session.close()

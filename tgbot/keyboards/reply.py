@@ -3,7 +3,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 
 class ReplyButtons(str, Enum):
-    SEND_MENU = '🧾 Show Menu'
+    SEND_MENU = '🧾 Get transcription'
 
 
 def user_menu_keyboard():
@@ -11,5 +11,5 @@ def user_menu_keyboard():
     keyboard.button(
         text=ReplyButtons.SEND_MENU
     )
-    keyboard.adjust(2)
+    keyboard.adjust(1)
     return keyboard.as_markup(resize_keyboard=True)

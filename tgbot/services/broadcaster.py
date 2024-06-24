@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Union
 
 from aiogram import Bot
 from aiogram import exceptions
