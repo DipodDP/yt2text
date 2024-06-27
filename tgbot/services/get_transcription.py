@@ -1,3 +1,4 @@
+import asyncio
 import re
 
 from betterlogging import logging
@@ -44,7 +45,11 @@ async def get_transcription(video_id: str):
     str: transcription if video found, else None.
     """
 
-    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=("ru",))
-    transcript_text = " ".join([chunck.get("text") for chunck in transcript])
+    try:
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=("ru",))
+        transcript_text = " ".join([chunck.get("text") for chunck in transcript])
+    except ConnectionError:
+        await asyncio.sleep(1)
+        transcript_text = await get_transcription(video_id)
 
     return transcript_text
